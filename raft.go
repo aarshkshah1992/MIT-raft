@@ -69,6 +69,9 @@ type Raft struct {
 
 	// helpers
 	elecTimeoutHandler ElectionHandler // handles election timeouts, asks for votes etc
+
+	// Channel for committed commands
+	applyCh chan ApplyMsg
 }
 
 // return currentTerm and whether this server
@@ -235,13 +238,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	if rf.state != Leader {
+		return -1, -1, false
+	}
 
-	// Your code here (2B).
-
-	return index, term, isLeader
+	return rf.lastLogIndex() + 1, rf.currentTerm, true
 }
 
 //

@@ -36,10 +36,15 @@ func (rf *Raft) sendHeartBeatsToAllFollowers(leadershipTerm int) {
 
 		// send each heartbeat in it's own go-routine
 		go func(peer int) {
-			heartbeat := &AppendEntriesArgs{Term: leadershipTerm, LeaderId: rf.me}
-			reply := &AppendEntriesReply{}
+			// make heartbeat msg
+			rf.mu.Lock()
+			lastlogIndex := rf.lastLogIndex()
+			lastLogTerm := rf.log[lastlogIndex].Term
+			heartbeat := &AppendEntriesArgs{Term: leadershipTerm, LeaderId: rf.me, PrevLogIndex: lastlogIndex, PrevLogTerm: lastLogTerm}
+			rf.mu.Unlock()
 
 			// send heartbeat RPC & wait for reply
+			reply := &AppendEntriesReply{}
 			ok := rf.sendAppendEntries(peer, heartbeat, reply)
 
 			// reacquire lock

@@ -46,9 +46,15 @@ func (e *ElectionHandler) Start() {
 					}
 
 					go func(rpcTerm int, peer int) {
-						reply := &RequestVoteReply{}
-						req := &RequestVoteArgs{rpcTerm, e.raft.me, 0, 0}
+						// make vote request
+						e.raft.mu.Lock()
+						lastlogIndex := e.raft.lastLogIndex()
+						lastLogTerm := e.raft.log[lastlogIndex].Term
+						req := &RequestVoteArgs{rpcTerm, e.raft.me, lastlogIndex, lastLogTerm}
+						e.raft.mu.Unlock()
+
 						// send rpc to ask for vote
+						reply := &RequestVoteReply{}
 						ok := e.raft.sendRequestVote(peer, req, reply)
 
 						e.raft.mu.Lock()

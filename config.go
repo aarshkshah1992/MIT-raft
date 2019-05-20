@@ -183,8 +183,6 @@ func (cfg *config) start1(i int) {
 				_, prevok := cfg.logs[i][m.CommandIndex-1]
 				cfg.logs[i][m.CommandIndex] = v
 
-				fmt.Println("\n LOGS ARE ", cfg.logs)
-
 				if m.CommandIndex > cfg.maxIndex {
 					cfg.maxIndex = m.CommandIndex
 				}

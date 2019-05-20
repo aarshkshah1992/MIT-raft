@@ -13,8 +13,6 @@ func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.VoteGranted = true
 	rf.votedFor = args.CandidateID
 
-	// reset election timer as I granted a vote
-	rf.elecTimeoutHandler.reset()
 }
 
 func (rf *Raft) refuseVote(reply *RequestVoteReply) {
@@ -31,8 +29,6 @@ func (rf *Raft) becomeCandidate() {
 	rf.state = Candidate
 	rf.currentTerm = rf.currentTerm + 1
 	rf.votedFor = rf.me
-
-	rf.elecTimeoutHandler.reset()
 }
 
 func (rf *Raft) becomeLeader() {
@@ -52,14 +48,18 @@ func (rf *Raft) becomeLeader() {
 }
 
 func (rf *Raft) isCandidateLogUpToDate(args *RequestVoteArgs) bool {
-	if args.LastLogTerm == rf.log[rf.lastLogIndex()].Term {
+	if args.LastLogTerm == rf.lastLogTerm() {
 		return args.LastLogIndex >= rf.lastLogIndex()
 	}
-	return args.LastLogTerm > rf.log[rf.lastLogIndex()].Term
+	return args.LastLogTerm > rf.lastLogTerm()
 }
 
 func (rf *Raft) lastLogIndex() int {
 	return len(rf.log) - 1
+}
+
+func (rf *Raft) lastLogTerm() int {
+	return rf.log[rf.lastLogIndex()].Term
 }
 
 func (rf *Raft) syncLogs(args *AppendEntriesArgs) int {

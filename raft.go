@@ -142,6 +142,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// terms match -> check if I can still vote & that candidate's log is up to date
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateID) && rf.isCandidateLogUpToDate(args) {
 		rf.grantVote(args, reply)
+		// resetTimer election timer as I granted a vote
+		rf.elecTimeoutHandler.resetTimer()
 	} else {
 		// refuse vote as either I have already voted or candidate's log is not up to date
 		rf.refuseVote(reply)
@@ -153,7 +155,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// leader.term < myterm -> reply false & DO NOT reset election timer as he is not leader for current term
+	// leader.term < myterm -> reply false & DO NOT resetTimer election timer as he is not leader for current term
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.Success = false
@@ -161,8 +163,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// ----Can now assume that we are dealing with RPC from current leader-----------------------------------------------
-	// Reset timer
-	rf.elecTimeoutHandler.reset()
+	// Reset timer as we hear from current leader
+	rf.elecTimeoutHandler.resetTimer()
 
 	// leader.term > myterm -> become follower for new term & continue processing RPC
 	if args.Term > rf.currentTerm {
@@ -272,6 +274,7 @@ func (rf *Raft) applyToStateMachine() {
 		if peer == rf.me {
 			continue
 		}
+
 		// do I need to send the entry to this peer ?
 		if rf.lastLogIndex() >= rf.leaderState.nextIndex[peer] {
 			go rf.sendEntriesToPeer(peer, rf.currentTerm)
@@ -344,8 +347,8 @@ func (rf *Raft) updateLeaderCommitIndex() {
 			// don't count myself
 			if peer == rf.me {
 				continue
-			}
 
+			}
 			if rf.leaderState.matchIndex[peer] >= i && rf.log[i].Term == rf.currentTerm {
 				countForI = countForI + 1
 				// replicated to majority of servers
@@ -416,7 +419,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	// create election timer & start on a dedicated go-routine
-	rf.elecTimeoutHandler = ElectionHandler{raft: rf, fireAt: time.Now().Add(getNewElecTimeout())}
+	rf.elecTimeoutHandler = ElectionHandler{raft: rf, fireAt: time.Now().Add(getNewElectionTimeout())}
 	go rf.elecTimeoutHandler.Start()
 
 	// dedicated go routine to apply committed commands

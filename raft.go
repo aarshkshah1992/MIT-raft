@@ -18,7 +18,6 @@ package raft
 //
 
 import (
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -162,6 +161,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// ----Can now assume that we are dealing with RPC from current leader-----------------------------------------------
+	// Reset timer
+	rf.elecTimeoutHandler.reset()
 
 	// leader.term > myterm -> become follower for new term & continue processing RPC
 	if args.Term > rf.currentTerm {
@@ -170,7 +171,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	// return false if I do NOT have a matching entry preceding the entries in the call
 	if rf.lastLogIndex() < args.PrevLogIndex || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-		fmt.Printf("\n peer %d is not appending entry %+v from leader %d as there is no matching entry", rf.me, args, args.LeaderId)
+
 		rf.replyAppendCallByCurrentLeader(reply, false)
 		return
 	}
@@ -254,17 +255,16 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 
-	go rf.applyToStateMachine(command)
-
-	return rf.lastLogIndex() + 1, rf.currentTerm, true
-}
-
-func (rf *Raft) applyToStateMachine(command interface{}) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	go rf.applyToStateMachine()
 
 	// append to log
 	rf.log = append(rf.log, LogEntry{rf.currentTerm, command})
+	return rf.lastLogIndex(), rf.currentTerm, true
+}
+
+func (rf *Raft) applyToStateMachine() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	// for each peer, send the entry as per the rules
 	for peer, _ := range rf.peers {
@@ -292,28 +292,27 @@ func (rf *Raft) sendEntriesToPeer(peer int, termForRPC int) {
 	// send RPC & wait for reply
 	reply := &AppendEntriesReply{}
 	ok := rf.sendAppendEntries(peer, appendEntriesArgs, reply)
-	fmt.Printf("\n Leader %d sent request %+v to peer %d", rf.me, appendEntriesArgs, peer)
 
 	// reacquire lock
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	fmt.Printf("\n Leader %d recieved reply %+v from peer %d", rf.me, reply, peer)
-
-	//retry if RPC failed
-	if !ok {
-		rf.sendEntriesToPeer(peer, termForRPC)
-		return
-	}
 
 	// assert that my term hasn't changed since I sent the RPC
 	if rf.currentTerm != termForRPC {
+		rf.mu.Unlock()
+		return
+	}
+
+	//retry if RPC failed
+	if !ok {
+		rf.mu.Unlock()
+		rf.sendEntriesToPeer(peer, termForRPC)
 		return
 	}
 
 	// reply.Term > myterm -> become follower for new term
 	if reply.Term > termForRPC {
 		rf.becomeFollowerForTerm(reply.Term)
+		rf.mu.Unlock()
 		return
 	}
 
@@ -325,9 +324,12 @@ func (rf *Raft) sendEntriesToPeer(peer int, termForRPC int) {
 		go rf.updateLeaderCommitIndex()
 	} else {
 		rf.leaderState.nextIndex[peer] = rf.leaderState.nextIndex[peer] - 1
+		rf.mu.Unlock()
 		rf.sendEntriesToPeer(peer, termForRPC)
 		return
 	}
+
+	rf.mu.Unlock()
 }
 
 func (rf *Raft) updateLeaderCommitIndex() {
@@ -349,7 +351,6 @@ func (rf *Raft) updateLeaderCommitIndex() {
 				// replicated to majority of servers
 				if countForI > len(rf.peers)/2 {
 					newCommitIndex = i
-					fmt.Printf("\n Entry %+v for index %d has been replicated to majority..updating commit index to %d", rf.log[i], i, newCommitIndex)
 					break
 				}
 			}
@@ -360,9 +361,7 @@ func (rf *Raft) updateLeaderCommitIndex() {
 	if newCommitIndex > rf.commitIndex {
 		rf.commitIndex = newCommitIndex
 		go func() {
-			fmt.Printf("\n Writing here")
 			rf.commitIndexChan <- struct{}{}
-			fmt.Printf("\n Finished writing")
 		}()
 	}
 }
@@ -423,8 +422,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// dedicated go routine to apply committed commands
 	go rf.applyCommittedCommands()
 
-	fmt.Printf("\n Raft started on peer %d", rf.me)
-
 	return rf
 }
 
@@ -432,8 +429,6 @@ func (rf *Raft) applyCommittedCommands() {
 	for {
 		// block till commit index changes
 		<-rf.commitIndexChan
-
-		fmt.Printf("\n updating commitIndex for peer %d to %d", rf.me, rf.commitIndex)
 
 		rf.mu.Lock()
 		currCommitIndex := rf.commitIndex
@@ -449,16 +444,11 @@ func (rf *Raft) applyCommittedCommands() {
 			// relase lock as writing on channel can block
 			rf.applyCh <- applyMsg
 
-			fmt.Printf("\n Index %d applied for peer %d", i, rf.me)
-
 			rf.mu.Lock()
 			rf.lastApplied = rf.lastApplied + 1
 			rf.mu.Unlock()
 
 		}
 
-		if rf.state == Leader {
-			fmt.Printf("\n LEADER has finished updating commit Index..commit index is now %d & lastapplied is now %d", rf.commitIndex, rf.lastApplied)
-		}
 	}
 }

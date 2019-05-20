@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -56,7 +55,6 @@ func (e *ElectionHandler) Start() {
 
 						// send rpc to ask for vote
 						reply := &RequestVoteReply{}
-						fmt.Printf("\n Candidate %d is sending vote request %+v to peer %d", e.raft.me, req, peer)
 						ok := e.raft.sendRequestVote(peer, req, reply)
 
 						e.raft.mu.Lock()
@@ -74,8 +72,6 @@ func (e *ElectionHandler) Start() {
 							e.raft.becomeFollowerForTerm(reply.Term)
 							return
 						}
-
-						fmt.Printf("\n Candidate %d has received vote %+v from peer %d for term %d", e.raft.me, reply, peer, reply.Term)
 
 						// vote has been granted
 						if reply.VoteGranted {

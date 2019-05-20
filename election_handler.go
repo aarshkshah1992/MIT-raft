@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -55,6 +56,7 @@ func (e *ElectionHandler) Start() {
 
 						// send rpc to ask for vote
 						reply := &RequestVoteReply{}
+						fmt.Printf("\n Candidate %d is sending vote request %+v to peer %d", e.raft.me, req, peer)
 						ok := e.raft.sendRequestVote(peer, req, reply)
 
 						e.raft.mu.Lock()
@@ -73,9 +75,15 @@ func (e *ElectionHandler) Start() {
 							return
 						}
 
+						fmt.Printf("\n Candidate %d has received vote %+v from peer %d for term %d", e.raft.me, reply, peer, reply.Term)
+
 						// vote has been granted
 						if reply.VoteGranted {
-							e.processVote(nVotes)
+							nVotes = nVotes + 1
+							// have i won the election ?
+							if nVotes > len(e.raft.peers)/2 {
+								e.raft.becomeLeader()
+							}
 						}
 					}(e.raft.currentTerm, i)
 				}
@@ -83,14 +91,6 @@ func (e *ElectionHandler) Start() {
 
 			e.raft.mu.Unlock()
 		}
-	}
-}
-
-func (e *ElectionHandler) processVote(nVotes int) {
-	nVotes = nVotes + 1
-	// have i won the election ?
-	if nVotes > len(e.raft.peers)/2 {
-		e.raft.becomeLeader()
 	}
 }
 

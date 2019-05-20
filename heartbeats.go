@@ -40,7 +40,7 @@ func (rf *Raft) sendHeartBeatsToAllFollowers(leadershipTerm int) {
 			rf.mu.Lock()
 			lastlogIndex := rf.lastLogIndex()
 			lastLogTerm := rf.log[lastlogIndex].Term
-			heartbeat := &AppendEntriesArgs{Term: leadershipTerm, LeaderId: rf.me, PrevLogIndex: lastlogIndex, PrevLogTerm: lastLogTerm}
+			heartbeat := &AppendEntriesArgs{Term: leadershipTerm, LeaderId: rf.me, PrevLogIndex: lastlogIndex, PrevLogTerm: lastLogTerm, LeaderCommit: rf.commitIndex}
 			rf.mu.Unlock()
 
 			// send heartbeat RPC & wait for reply

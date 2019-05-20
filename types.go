@@ -37,5 +37,5 @@ type RequestVoteReply struct {
 
 type LogEntry struct {
 	Term int
-	Cmd  []byte
+	Cmd  interface{}
 }

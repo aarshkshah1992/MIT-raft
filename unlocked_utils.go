@@ -1,5 +1,7 @@
 package raft
 
+import "fmt"
+
 /* HANDLE LOCKING IN THE CALLER FOR ALL FUNCTIONS HERE*/
 
 func (rf *Raft) becomeFollowerForTerm(term int) {
@@ -15,6 +17,7 @@ func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	// reset election timer as I granted a vote
 	rf.elecTimeoutHandler.reset()
+	fmt.Printf("\n Peer %d has granted vote to candidate %d for term %d", rf.me, args.CandidateID, rf.currentTerm)
 }
 
 func (rf *Raft) refuseVote(reply *RequestVoteReply) {
@@ -47,9 +50,11 @@ func (rf *Raft) becomeLeader() {
 		rf.leaderState.matchIndex = append(rf.leaderState.matchIndex, 0)
 	}
 
-	// send heartbeats immediately & then  schedule at regular intervals
+	// send heartbeats immediately & then schedule at regular intervals
 	rf.sendHeartBeatsToAllFollowers(rf.currentTerm)
 	go rf.scheduleHeartbeats(rf.currentTerm)
+
+	fmt.Printf("\n peer %d is now leader", rf.me)
 }
 
 func (rf *Raft) isCandidateLogUpToDate(args *RequestVoteArgs) bool {

@@ -179,8 +179,12 @@ func (cfg *config) start1(i int) {
 							m.CommandIndex, i, m.Command, j, old)
 					}
 				}
+
 				_, prevok := cfg.logs[i][m.CommandIndex-1]
 				cfg.logs[i][m.CommandIndex] = v
+
+				fmt.Println("\n LOGS ARE ", cfg.logs)
+
 				if m.CommandIndex > cfg.maxIndex {
 					cfg.maxIndex = m.CommandIndex
 				}

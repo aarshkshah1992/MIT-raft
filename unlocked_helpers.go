@@ -70,7 +70,9 @@ func (rf *Raft) lastLogTerm() int {
 	return rf.log[rf.lastLogIndex()].Term
 }
 
-func (rf *Raft) syncLogs(args *AppendEntriesArgs) int {
+func (rf *Raft) syncLogs(args *AppendEntriesArgs) (int, bool) {
+	logChange := false
+
 	// index into the 'new' entries sent by the leader as a part of Append Entries
 	leaderEntriesIndex := 0
 	// index into my own log starting from the matching entry + 1
@@ -81,6 +83,7 @@ func (rf *Raft) syncLogs(args *AppendEntriesArgs) int {
 		if rf.log[logIndex].Term != args.Entries[leaderEntriesIndex].Term {
 			// conflicting entry...delete all entries in the log starting from that index
 			rf.log = rf.log[:logIndex]
+			logChange = true
 			break
 		}
 		leaderEntriesIndex++
@@ -90,11 +93,12 @@ func (rf *Raft) syncLogs(args *AppendEntriesArgs) int {
 	// append entries into my log that I do not have
 	for leaderEntriesIndex < len(args.Entries) {
 		rf.log = append(rf.log, args.Entries[leaderEntriesIndex])
+		logChange = true
 		leaderEntriesIndex++
 		logIndex++
 	}
 
-	return logIndex - 1
+	return logIndex - 1, logChange
 }
 
 // save Raft's persistent state to stable storage,

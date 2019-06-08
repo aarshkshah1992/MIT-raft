@@ -113,18 +113,33 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.becomeFollowerForTerm(args.Term)
 	}
 
-	// return false if I do NOT have a matching entry preceding the entries in the call
-	if rf.lastLogIndex() < args.PrevLogIndex || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+	// return false if I do NOT have the preceding entry sent by the leader
+	if rf.lastLogIndex() < args.PrevLogIndex {
+		reply.ConflictIndex = len(rf.log)
+		reply.ConflictTerm = -1
+		rf.replyAppendCallByCurrentLeader(reply, false)
+		return
+	}
+
+	// return false if terms of the preceding entry do not match
+	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+
+		for i := 1; i <= rf.lastLogIndex(); i++ {
+			if rf.log[i].Term == reply.ConflictTerm {
+				reply.ConflictIndex = i
+				break
+			}
+		}
+
 		rf.replyAppendCallByCurrentLeader(reply, false)
 		return
 	}
 
 	// 1) starting after the prev matching entry, remove entries in my log that conflict with the leader's log
 	// 2) append entries sent by the leader which are absent in my log
-	currentLogLength := len(rf.log)
-	lastNewEntryIndex := rf.syncLogs(args)
-	// persist state if log length has changed
-	if currentLogLength != len(rf.log) {
+	lastNewEntryIndex, logChange := rf.syncLogs(args)
+	if logChange {
 		rf.persist()
 	}
 
@@ -218,24 +233,22 @@ func (rf *Raft) sendAppendEntriesRPC(leadershipTerm int, peer int) {
 
 	// reacquire lock
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	// return if my term changed since sending the RPC
 	if rf.currentTerm != leadershipTerm {
-		rf.mu.Unlock()
 		return
 	}
 
 	// retry if RPC failed
 	if !ok {
-		rf.mu.Unlock()
-		rf.sendAppendEntriesRPC(leadershipTerm, peer)
+		go rf.sendAppendEntriesRPC(leadershipTerm, peer)
 		return
 	}
 
 	// become follower & return if I see a higher term
 	if reply.Term > leadershipTerm {
 		rf.becomeFollowerForTerm(reply.Term)
-		rf.mu.Unlock()
 		return
 	}
 
@@ -246,14 +259,22 @@ func (rf *Raft) sendAppendEntriesRPC(leadershipTerm int, peer int) {
 
 		// update the commit index if applicable
 		go rf.updateLeaderCommitIndex(leadershipTerm)
-		rf.mu.Unlock()
 		return
 	}
 
 	// follower's log is not in sync, try to find an older matching entry
-	rf.leaderState.nextIndex[peer] = rf.leaderState.nextIndex[peer] - 1
-	rf.mu.Unlock()
-	rf.sendAppendEntriesRPC(leadershipTerm, peer)
+	if reply.ConflictTerm != -1 {
+		for i := rf.lastLogIndex(); i > 0; i-- {
+			if rf.log[i].Term == reply.ConflictTerm {
+				rf.leaderState.nextIndex[peer] = i + 1
+				go rf.sendAppendEntriesRPC(leadershipTerm, peer)
+				return
+			}
+		}
+	}
+
+	rf.leaderState.nextIndex[peer] = reply.ConflictIndex
+	go rf.sendAppendEntriesRPC(leadershipTerm, peer)
 }
 
 //  Update the leader's commit index to the highest index that has been replicated on a majority of servers for the CURRENT TERM

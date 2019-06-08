@@ -1,5 +1,6 @@
 package raft
 
+// State is the current state of the Raft instance
 type State int
 
 const (
@@ -8,7 +9,6 @@ const (
 	Leader
 )
 
-// Change both of these later for 2B/2C
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     int
@@ -42,5 +42,5 @@ type LogEntry struct {
 
 type LeaderState struct {
 	nextIndex  []int // index of next entry to send to a follower
-	matchIndex []int // index of highest entry replicated on server
+	matchIndex []int // index of highest entry replicated on follower
 }
